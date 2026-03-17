@@ -71,12 +71,12 @@ class LocalJanitor:
                 logger.error(f'Failed to delete {file_path}. Reason: {e}')
 
 @mcp.tool()
-def search_ia_vst(query: str) -> str:
-    """Search for freeware VSTs on Internet Archive. Returns a list of identifiers."""
-    logger.info(f"🔍 [bold cyan]Searching IA for:[/bold cyan] {query}", extra={"markup": True})
+def search_internetarchive(query: str, page: int = 1, limit: int = 10) -> str:
+    """Search for abandonware/software on Internet Archive. Returns a list of identifiers and pagination info."""
+    logger.info(f"🔍 [bold cyan]Searching IA for:[/bold cyan] {query} (Page: {page}, Limit: {limit})", extra={"markup": True})
     
     search_query = f"mediatype:software AND {query}"
-    results = ia.search_items(search_query)
+    results = ia.search_items(search_query, params={'page': page})
     
     identifiers = []
     table = Table(title=f"Search Results for: {query}")
@@ -84,7 +84,7 @@ def search_ia_vst(query: str) -> str:
     table.add_column("Identifier", style="green")
     
     for i, result in enumerate(results):
-        if i >= 5:
+        if i >= limit:
             break
         ident = result['identifier']
         identifiers.append(ident)
@@ -92,11 +92,11 @@ def search_ia_vst(query: str) -> str:
     
     if not identifiers:
         logger.warning(f"❌ No results found for query: {query}")
-        return "Error: No results found for query."
+        return json.dumps({"page": page, "limit": limit, "identifiers": []})
     
     broadcast(table)
-    logger.info(f"✅ Found {len(identifiers)} items", extra={"markup": True})
-    return json.dumps(identifiers)
+    logger.info(f"✅ Found {len(identifiers)} items on page {page}", extra={"markup": True})
+    return json.dumps({"page": page, "limit": limit, "identifiers": identifiers})
 
 @mcp.tool()
 def get_item_details(identifier: str) -> str:
@@ -258,13 +258,36 @@ def archive_to_mirror(local_file_path: str, ai_summary: str, metadata_tags: list
         return f"Error: {str(e)}"
 
 @mcp.tool()
-def cleanup_local_storage() -> str:
-    """Clean up download and extraction directories."""
+def cleanup_local_storage(target: str = "all") -> str:
+    """
+    Clean up local storage directories.
+    
+    Valid targets:
+    - 'all': wipes both 'data/downloads' and 'data/extracted'
+    - 'downloads': wipes only 'data/downloads'
+    - 'extracted': wipes only 'data/extracted'
+    """
     janitor = LocalJanitor()
-    janitor.wipe(os.path.join(BASE_DIR, "data/downloads"))
-    janitor.wipe(os.path.join(BASE_DIR, "data/extracted"))
-    logger.info("🧹 [bold green]Cleanup complete.[/bold green]", extra={"markup": True})
-    return "Local storage cleaned successfully."
+    downloads_path = os.path.join(BASE_DIR, "data/downloads")
+    extracted_path = os.path.join(BASE_DIR, "data/extracted")
+    
+    cleaned = []
+    if target == "all":
+        janitor.wipe(downloads_path)
+        janitor.wipe(extracted_path)
+        cleaned = ["downloads", "extracted"]
+    elif target == "downloads":
+        janitor.wipe(downloads_path)
+        cleaned = ["downloads"]
+    elif target == "extracted":
+        janitor.wipe(extracted_path)
+        cleaned = ["extracted"]
+    else:
+        return f"Error: Invalid target '{target}'. Valid targets are 'all', 'downloads', or 'extracted'."
+
+    targets_str = " and ".join(cleaned)
+    logger.info(f"🧹 [bold green]Cleanup complete for: {targets_str}[/bold green]", extra={"markup": True})
+    return f"Cleanup complete. Target(s) cleaned: {targets_str}."
 
 if __name__ == "__main__":
     mcp.run()
